@@ -3,7 +3,7 @@ import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.2";
+const CARD_VERSION = "1.0.3";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app (isApp = true)" },
@@ -77,6 +77,9 @@ class IsAppCardEditor extends LitElement {
   }
 
   _branchChanged(ev) {
+    // Prevent nested hui-card-element-editor config from replacing the wrapper
+    // config on the dialog-level editor (same pattern as hui-stack-card-editor).
+    ev.stopPropagation();
     const branch = this._selectedBranch;
     this._fireConfigChanged({
       ...this._config,
@@ -239,7 +242,6 @@ class IsAppCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      type: CARD_TYPE,
       app_card: {
         type: "markdown",
         content: "**Companion app** — you are in the HA mobile app.",
