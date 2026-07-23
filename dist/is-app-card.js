@@ -3,7 +3,12 @@ import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.7";
+const CARD_VERSION = "1.0.8";
+
+const HELPERS_PROMISE =
+  typeof window !== "undefined" && window.loadCardHelpers
+    ? window.loadCardHelpers()
+    : null;
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app", panel: "app_card" },
@@ -27,6 +32,38 @@ function hasBranchConfig(config, branch) {
 
 function countConfiguredBranches(config) {
   return BRANCHES.filter((b) => hasBranchConfig(config, b.key)).length;
+}
+
+function cardTagForType(type) {
+  if (type.startsWith("custom:")) {
+    return type.slice("custom:".length);
+  }
+  return `hui-${type}-card`;
+}
+
+function probeNestedCard(branchConfig, method) {
+  if (!branchConfig?.type || !customElements.get(cardTagForType(branchConfig.type))) {
+    return null;
+  }
+
+  const tag = cardTagForType(branchConfig.type);
+  const probe = document.createElement(tag);
+
+  try {
+    probe.setConfig(branchConfig);
+  } catch (_err) {
+    return null;
+  }
+
+  if (typeof probe[method] !== "function") {
+    return null;
+  }
+
+  try {
+    return probe[method]();
+  } catch (_err) {
+    return null;
+  }
 }
 
 class IsAppCardEditor extends LitElement {
@@ -290,6 +327,7 @@ class IsAppCard extends HTMLElement {
     this._helpers = null;
     this._child = null;
     this._layout = undefined;
+    this._cachedGridOptions = null;
     this._isApp = detectIsApp();
     this._onVisibilityChange = () => {
       const next = detectIsApp();
@@ -304,6 +342,9 @@ class IsAppCard extends HTMLElement {
     this.style.display = "block";
     this.style.height = "100%";
     document.addEventListener("visibilitychange", this._onVisibilityChange);
+    if (this._config && !this._child) {
+      void this._initBranch();
+    }
   }
 
   disconnectedCallback() {
@@ -330,7 +371,8 @@ class IsAppCard extends HTMLElement {
     this._config = config;
     this._activeBranchKey = undefined;
     this._activeBranchConfig = undefined;
-    this._loadHelpers().then(() => this._renderActiveBranch());
+    this._cachedGridOptions = null;
+    void this._initBranch();
   }
 
   set hass(hass) {
@@ -341,27 +383,49 @@ class IsAppCard extends HTMLElement {
   }
 
   getCardSize() {
-    if (!this._child) {
-      return 1;
-    }
-    if (typeof this._child.getCardSize !== "function") {
-      return 1;
-    }
-    try {
-      const size = this._child.getCardSize();
-      if (size && typeof size.then === "function") {
+    if (this._child && typeof this._child.getCardSize === "function") {
+      try {
+        const size = this._child.getCardSize();
+        if (size && typeof size.then === "function") {
+          return size;
+        }
         return size;
+      } catch (_err) {
+        return 1;
       }
-      return size;
-    } catch (_err) {
-      return 1;
     }
+
+    const branchConfig = this._pickBranchConfig();
+    const probed = branchConfig ? probeNestedCard(branchConfig, "getCardSize") : null;
+    if (typeof probed === "number") {
+      return probed;
+    }
+    if (probed && typeof probed.then === "function") {
+      return probed;
+    }
+    return 1;
   }
 
   getGridOptions() {
     if (this._child?.getGridOptions) {
       return this._child.getGridOptions() || {};
     }
+    if (this._cachedGridOptions) {
+      return this._cachedGridOptions;
+    }
+
+    const branchConfig = this._pickBranchConfig();
+    if (branchConfig?.grid_options) {
+      return branchConfig.grid_options;
+    }
+
+    const probed = branchConfig
+      ? probeNestedCard(branchConfig, "getGridOptions")
+      : null;
+    if (probed) {
+      return probed;
+    }
+
     if (this._config?.grid_options) {
       return this._config.grid_options;
     }
@@ -378,11 +442,18 @@ class IsAppCard extends HTMLElement {
 
   async _loadHelpers() {
     if (!this._helpers) {
-      this._helpers = await window.loadCardHelpers();
+      this._helpers = HELPERS_PROMISE
+        ? await HELPERS_PROMISE
+        : await window.loadCardHelpers();
     }
   }
 
-  async _renderActiveBranch() {
+  async _initBranch() {
+    await this._loadHelpers();
+    this._renderActiveBranch();
+  }
+
+  _renderActiveBranch() {
     if (!this._config || !this._helpers) return;
 
     const branchConfig = this._pickBranchConfig();
@@ -403,19 +474,13 @@ class IsAppCard extends HTMLElement {
 
     if (!branchConfig) {
       this._child = null;
+      this._cachedGridOptions = null;
       this._activeBranchKey = branchKey;
       this._activeBranchConfig = branchConfig;
       return;
     }
 
-    const child = await this._helpers.createCardElement(branchConfig);
-
-    if (
-      this._pickBranchConfig() !== branchConfig ||
-      (this._isApp ? "app_card" : "nonapp_card") !== branchKey
-    ) {
-      return;
-    }
+    const child = this._helpers.createCardElement(branchConfig);
 
     if (this._hass) {
       child.hass = this._hass;
@@ -427,19 +492,22 @@ class IsAppCard extends HTMLElement {
     this._child = child;
     this._activeBranchKey = branchKey;
     this._activeBranchConfig = branchConfig;
+    this._cachedGridOptions = child.getGridOptions?.() || null;
     child.style.height = "100%";
     this.appendChild(child);
     this._notifyGridUpdated();
   }
 
   _notifyGridUpdated() {
-    const huiCard = this.closest("hui-card");
-    if (!huiCard) {
-      return;
-    }
-    huiCard.dispatchEvent(
-      new CustomEvent("card-updated", { bubbles: true, composed: true })
-    );
+    requestAnimationFrame(() => {
+      const huiCard = this.closest("hui-card");
+      if (!huiCard) {
+        return;
+      }
+      huiCard.dispatchEvent(
+        new CustomEvent("card-updated", { bubbles: true, composed: true })
+      );
+    });
   }
 }
 
