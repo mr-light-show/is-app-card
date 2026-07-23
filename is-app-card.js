@@ -1,8 +1,8 @@
-import { LitElement, html, css } from "https://unpkg.com/lit@3.3.3/lit.js?module";
+import { LitElement, html, css } from "https://unpkg.com/lit@3.3.3/index.js?module";
 import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app (isApp = true)" },
