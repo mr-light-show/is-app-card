@@ -2,7 +2,8 @@ import { LitElement, html, css } from "https://unpkg.com/lit@3.3.3/index.js?modu
 import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
-const CARD_VERSION = "1.0.1";
+const CARD_TYPE = `custom:${CARD_TAG}`;
+const CARD_VERSION = "1.0.2";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app (isApp = true)" },
@@ -22,7 +23,6 @@ function detectIsApp() {
 class IsAppCardEditor extends LitElement {
   static get properties() {
     return {
-      hass: { attribute: false },
       lovelace: { attribute: false },
       _config: { state: true },
       _selectedBranch: { state: true },
@@ -33,16 +33,43 @@ class IsAppCardEditor extends LitElement {
     super();
     this._config = {};
     this._selectedBranch = "app_card";
+    this._hass = undefined;
+  }
+
+  createRenderRoot() {
+    return this;
   }
 
   setConfig(config) {
     this._config = config || {};
+    this.requestUpdate();
+  }
+
+  set hass(hass) {
+    const changed = this._hass !== hass;
+    this._hass = hass;
+    if (changed) {
+      this.requestUpdate();
+    }
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _normalizeConfig(config) {
+    return {
+      ...config,
+      type: config.type || CARD_TYPE,
+    };
   }
 
   _fireConfigChanged(config) {
+    const next = this._normalizeConfig(config);
+    this._config = next;
     this.dispatchEvent(
       new CustomEvent("config-changed", {
-        detail: { config },
+        detail: { config: next },
         bubbles: true,
         composed: true,
       })
@@ -81,6 +108,11 @@ class IsAppCardEditor extends LitElement {
     this._selectedBranch = key;
   }
 
+  _branchHeader(branch) {
+    const meta = BRANCHES.find((b) => b.key === branch);
+    return meta ? `Editing: ${meta.label} (\`${branch}\`)` : branch;
+  }
+
   render() {
     const branch = this._selectedBranch;
     const branchConfig = this._config[branch];
@@ -89,56 +121,72 @@ class IsAppCardEditor extends LitElement {
       BRANCHES.some((b) => b.key !== branch && this._config[b.key]);
 
     return html`
-      <div class="tabs">
-        ${BRANCHES.map(
-          (b) => html`
-            <button
-              type="button"
-              class="tab ${b.key === branch ? "active" : ""}"
-              @click=${() => this._selectBranch(b.key)}
-            >
-              ${b.label}
-            </button>
-          `
-        )}
-      </div>
-
-      ${branchConfig
-        ? keyed(
-            branch,
-            html`
-              <hui-card-element-editor
-                .hass=${this.hass}
-                .lovelace=${this.lovelace}
-                .value=${branchConfig}
-                @config-changed=${this._branchChanged}
-              ></hui-card-element-editor>
-              ${canRemove
-                ? html`
-                    <button
-                      type="button"
-                      class="link"
-                      @click=${this._removeBranch}
-                    >
-                      Remove this branch
-                    </button>
-                  `
-                : ""}
+      <div class="editor-root">
+        <div class="tabs">
+          ${BRANCHES.map(
+            (b) => html`
+              <button
+                type="button"
+                class="tab ${b.key === branch ? "active" : ""}"
+                @click=${() => this._selectBranch(b.key)}
+              >
+                ${b.label}
+              </button>
             `
-          )
-        : html`
-            <p class="hint">No card configured for this branch.</p>
-            <button type="button" @click=${this._addBranch}>Add card</button>
-          `}
+          )}
+        </div>
+
+        <p class="yaml-hint">
+          Configure one branch at a time below. For the full
+          <code>custom:is-app-card</code> YAML (both branches), use this
+          dialog's top-level <strong>Show code editor</strong>.
+        </p>
+
+        ${branchConfig
+          ? keyed(
+              branch,
+              html`
+                <p class="branch-header">${this._branchHeader(branch)}</p>
+                <hui-card-element-editor
+                  .hass=${this.hass}
+                  .lovelace=${this.lovelace}
+                  .value=${branchConfig}
+                  @config-changed=${this._branchChanged}
+                ></hui-card-element-editor>
+                ${canRemove
+                  ? html`
+                      <button
+                        type="button"
+                        class="link"
+                        @click=${this._removeBranch}
+                      >
+                        Remove this branch
+                      </button>
+                    `
+                  : ""}
+              `
+            )
+          : html`
+              <p class="branch-header">${this._branchHeader(branch)}</p>
+              <p class="hint">No card configured for this branch.</p>
+              <button type="button" @click=${this._addBranch}>Add card</button>
+            `}
+      </div>
     `;
   }
 
   static get styles() {
     return css`
+      is-app-card-editor {
+        display: block;
+      }
+      .editor-root {
+        display: block;
+      }
       .tabs {
         display: flex;
         gap: 4px;
-        margin-bottom: 16px;
+        margin-bottom: 8px;
       }
       .tab {
         flex: 1;
@@ -152,6 +200,17 @@ class IsAppCardEditor extends LitElement {
       .tab.active {
         border-color: var(--primary-color);
         font-weight: bold;
+      }
+      .yaml-hint {
+        color: var(--secondary-text-color);
+        font-size: 0.9em;
+        margin: 0 0 12px;
+        line-height: 1.4;
+      }
+      .branch-header {
+        font-weight: bold;
+        margin: 0 0 12px;
+        color: var(--primary-text-color);
       }
       .hint {
         color: var(--secondary-text-color);
@@ -180,6 +239,7 @@ class IsAppCard extends HTMLElement {
 
   static getStubConfig() {
     return {
+      type: CARD_TYPE,
       app_card: {
         type: "markdown",
         content: "**Companion app** — you are in the HA mobile app.",
