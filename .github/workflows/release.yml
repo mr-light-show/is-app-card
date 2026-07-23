@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write  # Required to create releases and upload assets
@@ -13,9 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - name: Sync dist bundle
         run: ./scripts/sync-dist.sh
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: dist/is-app-card.js
