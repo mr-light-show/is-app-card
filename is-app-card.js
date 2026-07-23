@@ -3,7 +3,7 @@ import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.5";
+const CARD_VERSION = "1.0.6";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app", panel: "app_card" },
@@ -289,6 +289,7 @@ class IsAppCard extends HTMLElement {
     this._hass = null;
     this._helpers = null;
     this._child = null;
+    this._layout = undefined;
     this._isApp = detectIsApp();
     this._onVisibilityChange = () => {
       const next = detectIsApp();
@@ -300,12 +301,25 @@ class IsAppCard extends HTMLElement {
   }
 
   connectedCallback() {
+    this.style.display = "block";
+    this.style.height = "100%";
     document.addEventListener("visibilitychange", this._onVisibilityChange);
   }
 
   disconnectedCallback() {
     document.removeEventListener("visibilitychange", this._onVisibilityChange);
     this._child = null;
+  }
+
+  set layout(layout) {
+    this._layout = layout;
+    if (this._child) {
+      this._child.layout = layout;
+    }
+  }
+
+  get layout() {
+    return this._layout;
   }
 
   setConfig(config) {
@@ -325,11 +339,31 @@ class IsAppCard extends HTMLElement {
   }
 
   getCardSize() {
-    if (!this._child || typeof this._child.getCardSize !== "function") {
+    if (!this._child) {
       return 1;
     }
-    const size = this._child.getCardSize();
-    return typeof size?.then === "function" ? size : Promise.resolve(size);
+    if (typeof this._child.getCardSize !== "function") {
+      return 1;
+    }
+    try {
+      const size = this._child.getCardSize();
+      if (size && typeof size.then === "function") {
+        return size;
+      }
+      return size;
+    } catch (_err) {
+      return 1;
+    }
+  }
+
+  getGridOptions() {
+    if (this._child?.getGridOptions) {
+      return this._child.getGridOptions() || {};
+    }
+    if (this._config?.grid_options) {
+      return this._config.grid_options;
+    }
+    return {};
   }
 
   _pickBranchConfig() {
@@ -361,9 +395,16 @@ class IsAppCard extends HTMLElement {
     if (this._hass) {
       child.hass = this._hass;
     }
+    if (this._layout !== undefined) {
+      child.layout = this._layout;
+    }
 
     this._child = child;
+    child.style.height = "100%";
     this.appendChild(child);
+    this.dispatchEvent(
+      new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+    );
   }
 }
 
