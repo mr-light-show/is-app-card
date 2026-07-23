@@ -3,11 +3,11 @@ import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.4";
+const CARD_VERSION = "1.0.5";
 
 const BRANCHES = [
-  { key: "app_card", label: "Companion app (isApp = true)" },
-  { key: "nonapp_card", label: "Browser (isApp = false)" },
+  { key: "app_card", label: "Companion app", panel: "app_card" },
+  { key: "nonapp_card", label: "Browser", panel: "nonapp_card" },
 ];
 
 function detectIsApp() {
@@ -20,17 +20,28 @@ function detectIsApp() {
   );
 }
 
+function hasBranchConfig(config, branch) {
+  const b = config?.[branch];
+  return b && typeof b === "object" && b.type !== undefined;
+}
+
+function countConfiguredBranches(config) {
+  return BRANCHES.filter((b) => hasBranchConfig(config, b.key)).length;
+}
+
 class IsAppCardEditor extends LitElement {
   static get properties() {
     return {
       lovelace: { attribute: false },
       _config: { state: true },
+      _selectedTab: { state: true },
     };
   }
 
   constructor() {
     super();
     this._config = {};
+    this._selectedTab = "app_card";
     this._hass = undefined;
   }
 
@@ -56,10 +67,13 @@ class IsAppCardEditor extends LitElement {
   }
 
   _normalizeConfig(config) {
-    return {
-      ...config,
-      type: config.type || CARD_TYPE,
-    };
+    const next = { ...config, type: config.type || CARD_TYPE };
+    for (const { key } of BRANCHES) {
+      if (!hasBranchConfig(next, key)) {
+        delete next[key];
+      }
+    }
+    return next;
   }
 
   _fireConfigChanged(config) {
@@ -90,51 +104,66 @@ class IsAppCardEditor extends LitElement {
     });
   }
 
-  _replaceBranch(branch) {
-    this._fireConfigChanged({
-      ...this._config,
-      [branch]: {},
-    });
+  _clearBranch(branch) {
+    const next = { ...this._config };
+    delete next[branch];
+    this._fireConfigChanged(next);
   }
 
-  _hasBranchCard(branch) {
-    const branchConfig = this._config[branch];
-    return branchConfig?.type !== undefined;
+  _canRemoveBranch(branch) {
+    if (!hasBranchConfig(this._config, branch)) {
+      return false;
+    }
+    return countConfiguredBranches(this._config) > 1;
   }
 
-  _renderBranch(branchKey, label) {
+  _selectTab(ev) {
+    this._selectedTab = ev.detail.name;
+  }
+
+  _renderBranchPanel(branchKey) {
     const branchConfig = this._config[branchKey];
+    const hasCard = hasBranchConfig(this._config, branchKey);
+    const canRemove = this._canRemoveBranch(branchKey);
 
     return html`
-      <section class="branch">
-        <div class="branch-header-row">
-          <h3 class="branch-header">${label}</h3>
-          ${this._hasBranchCard(branchKey)
-            ? html`
+      <section class="branch-panel">
+        ${hasCard
+          ? html`
+              <div class="branch-actions">
                 <button
                   type="button"
                   class="link"
-                  @click=${() => this._replaceBranch(branchKey)}
+                  @click=${() => this._clearBranch(branchKey)}
                 >
                   Change card type
                 </button>
-              `
-            : nothing}
-        </div>
-
-        ${this._hasBranchCard(branchKey)
-          ? keyed(
-              `${branchKey}-${branchConfig.type}`,
-              html`
-                <hui-card-element-editor
-                  .hass=${this.hass}
-                  .lovelace=${this.lovelace}
-                  .value=${branchConfig}
-                  @config-changed=${(ev) => this._branchChanged(branchKey, ev)}
-                ></hui-card-element-editor>
-              `
-            )
+                ${canRemove
+                  ? html`
+                      <button
+                        type="button"
+                        class="link danger"
+                        @click=${() => this._clearBranch(branchKey)}
+                      >
+                        Remove card
+                      </button>
+                    `
+                  : nothing}
+              </div>
+              ${keyed(
+                `${branchKey}-${branchConfig.type}`,
+                html`
+                  <hui-card-element-editor
+                    .hass=${this.hass}
+                    .lovelace=${this.lovelace}
+                    .value=${branchConfig}
+                    @config-changed=${(ev) => this._branchChanged(branchKey, ev)}
+                  ></hui-card-element-editor>
+                `
+              )}
+            `
           : html`
+              <p class="hint">Pick a card for this branch.</p>
               <hui-card-picker
                 .hass=${this.hass}
                 .lovelace=${this.lovelace}
@@ -146,15 +175,31 @@ class IsAppCardEditor extends LitElement {
   }
 
   render() {
+    const activeBranch = BRANCHES.find((b) => b.key === this._selectedTab);
+
     return html`
       <div class="editor-root">
+        <ha-tab-group @wa-tab-show=${this._selectTab}>
+          ${BRANCHES.map(
+            (b) => html`
+              <ha-tab-group-tab
+                slot="nav"
+                panel=${b.panel}
+                .active=${this._selectedTab === b.key}
+              >
+                ${b.label}
+              </ha-tab-group-tab>
+            `
+          )}
+        </ha-tab-group>
+
         <p class="yaml-hint">
-          Choose a card type for each branch below. For the full
+          Configure each branch with the tabs above. For the full
           <code>custom:is-app-card</code> YAML, use this dialog's top-level
           <strong>Show code editor</strong>.
         </p>
 
-        ${BRANCHES.map((b) => this._renderBranch(b.key, b.label))}
+        ${activeBranch ? this._renderBranchPanel(activeBranch.key) : nothing}
       </div>
     `;
   }
@@ -167,33 +212,38 @@ class IsAppCardEditor extends LitElement {
       .editor-root {
         display: block;
       }
+      ha-tab-group {
+        display: block;
+        margin-bottom: 12px;
+      }
+      ha-tab-group-tab {
+        flex: 1;
+      }
+      ha-tab-group-tab::part(base) {
+        width: 100%;
+        justify-content: center;
+      }
       .yaml-hint {
         color: var(--secondary-text-color);
         font-size: 0.9em;
-        margin: 0 0 16px;
+        margin: 0 0 12px;
         line-height: 1.4;
       }
-      .branch {
+      .branch-panel {
         border: 1px solid var(--divider-color);
         border-radius: var(--ha-border-radius-sm, 4px);
         padding: 12px;
-        margin-bottom: 16px;
       }
-      .branch:last-child {
-        margin-bottom: 0;
-      }
-      .branch-header-row {
+      .branch-actions {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
+        flex-wrap: wrap;
+        justify-content: flex-end;
         gap: 12px;
         margin-bottom: 12px;
       }
-      .branch-header {
-        font-weight: bold;
-        margin: 0;
-        color: var(--primary-text-color);
-        font-size: 1em;
+      .hint {
+        color: var(--secondary-text-color);
+        margin: 0 0 12px;
       }
       .link {
         background: none;
@@ -202,10 +252,17 @@ class IsAppCardEditor extends LitElement {
         cursor: pointer;
         padding: 0;
         font-size: 0.9em;
-        white-space: nowrap;
+      }
+      .link.danger {
+        color: var(--error-color, #db4437);
       }
       button.link:hover {
         text-decoration: underline;
+      }
+      button.link:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        text-decoration: none;
       }
       hui-card-picker {
         display: block;
@@ -223,16 +280,7 @@ class IsAppCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return {
-      app_card: {
-        type: "markdown",
-        content: "**Companion app** — you are in the HA mobile app.",
-      },
-      nonapp_card: {
-        type: "markdown",
-        content: "**Browser** — you are in a normal web browser.",
-      },
-    };
+    return {};
   }
 
   constructor() {
@@ -265,16 +313,6 @@ class IsAppCard extends HTMLElement {
       throw new Error("Invalid configuration");
     }
 
-    const hasAppCard = config.app_card && typeof config.app_card === "object";
-    const hasNonappCard =
-      config.nonapp_card && typeof config.nonapp_card === "object";
-
-    if (!hasAppCard && !hasNonappCard) {
-      throw new Error(
-        "is-app-card requires at least one of: app_card, nonapp_card"
-      );
-    }
-
     this._config = config;
     this._loadHelpers().then(() => this._renderActiveBranch());
   }
@@ -295,7 +333,11 @@ class IsAppCard extends HTMLElement {
   }
 
   _pickBranchConfig() {
-    return this._isApp ? this._config.app_card : this._config.nonapp_card;
+    const branch = this._isApp ? "app_card" : "nonapp_card";
+    if (!hasBranchConfig(this._config, branch)) {
+      return undefined;
+    }
+    return this._config[branch];
   }
 
   async _loadHelpers() {

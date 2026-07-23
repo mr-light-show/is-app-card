@@ -65,16 +65,18 @@ resources:
 ## Dashboard UI usage
 
 1. Edit dashboard → **Add card** → search **Is App Card**
-2. Use the visual editor tabs:
+2. New cards start with **no branches configured** — pick a card type on each tab as needed.
+3. Use the visual editor tabs:
    - **Companion app** — card shown when `isApp` is true (`app_card`)
    - **Browser** — card shown when `isApp` is false (`nonapp_card`)
-3. Each tab embeds the standard HA card editor (UI or YAML) for any nested card type
+4. Each tab shows the HA **card picker** until a type is chosen, then the standard card editor for that nested card.
 
 ### Visual editor notes
 
-- The editor shows **two tabs** at the top — switch between companion app and browser branches.
-- The nested editor below each tab configures **one branch at a time** (e.g. markdown, entities).
-- The nested editor's own YAML toggle shows only the **active branch** — that is expected.
+- The editor uses HA **tab group** tabs to switch between companion app and browser branches.
+- **Change card type** clears the active branch and reopens the card picker for that tab.
+- **Remove card** drops the branch from saved YAML (hidden when it is the only configured branch).
+- The nested editor's YAML toggle shows only the **active branch** — that is expected.
 - For the full wrapper config (`type: custom:is-app-card` with both `app_card` and `nonapp_card`), use this dialog's top-level **Show code editor**.
 - If a card was added while an older broken version was installed, delete it and re-add from the card picker.
 
