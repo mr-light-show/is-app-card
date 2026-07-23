@@ -1,0 +1,23 @@
+# Branch both ways
+type: custom:is-app-card
+app_card:
+  type: markdown
+  content: "### Companion app\nYou are viewing this in the HA mobile app."
+nonapp_card:
+  type: markdown
+  content: "### Browser\nYou are viewing this in a normal browser."
+
+---
+# App-only branch
+type: custom:is-app-card
+app_card:
+  type: entities
+  entities:
+    - light.kitchen
+
+---
+# Browser-only branch
+type: custom:is-app-card
+nonapp_card:
+  type: picture-entity
+  entity: camera.driveway

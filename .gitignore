@@ -1,0 +1,13 @@
+# Dependencies (if added later)
+node_modules/
+
+# Build output — keep dist/ tracked for HACS (see remote_pianobar_card/.gitignore)
+# dist/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Secrets
+scripts/HA_TOKEN

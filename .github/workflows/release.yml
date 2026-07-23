@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure dist bundle exists
+        run: test -f dist/is-app-card.js
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/is-app-card.js
