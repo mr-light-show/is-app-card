@@ -1,9 +1,9 @@
-import { LitElement, html, css } from "https://unpkg.com/lit@3.3.3/index.js?module";
+import { LitElement, html, css, nothing } from "https://unpkg.com/lit@3.3.3/index.js?module";
 import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.3";
+const CARD_VERSION = "1.0.4";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app (isApp = true)" },
@@ -25,14 +25,12 @@ class IsAppCardEditor extends LitElement {
     return {
       lovelace: { attribute: false },
       _config: { state: true },
-      _selectedBranch: { state: true },
     };
   }
 
   constructor() {
     super();
     this._config = {};
-    this._selectedBranch = "app_card";
     this._hass = undefined;
   }
 
@@ -76,104 +74,87 @@ class IsAppCardEditor extends LitElement {
     );
   }
 
-  _branchChanged(ev) {
-    // Prevent nested hui-card-element-editor config from replacing the wrapper
-    // config on the dialog-level editor (same pattern as hui-stack-card-editor).
+  _branchChanged(branch, ev) {
     ev.stopPropagation();
-    const branch = this._selectedBranch;
     this._fireConfigChanged({
       ...this._config,
       [branch]: ev.detail.config,
     });
   }
 
-  _addBranch() {
-    const branch = this._selectedBranch;
-    if (this._config[branch]) return;
+  _cardPicked(branch, ev) {
+    ev.stopPropagation();
     this._fireConfigChanged({
       ...this._config,
-      [branch]: { type: "markdown", content: "" },
+      [branch]: ev.detail.config,
     });
   }
 
-  _removeBranch() {
-    const branch = this._selectedBranch;
-    const hasOther = BRANCHES.some(
-      (b) => b.key !== branch && this._config[b.key]
-    );
-    if (!hasOther) return;
-    const next = { ...this._config };
-    delete next[branch];
-    this._fireConfigChanged(next);
+  _replaceBranch(branch) {
+    this._fireConfigChanged({
+      ...this._config,
+      [branch]: {},
+    });
   }
 
-  _selectBranch(key) {
-    this._selectedBranch = key;
-  }
-
-  _branchHeader(branch) {
-    const meta = BRANCHES.find((b) => b.key === branch);
-    return meta ? `Editing: ${meta.label} (\`${branch}\`)` : branch;
-  }
-
-  render() {
-    const branch = this._selectedBranch;
+  _hasBranchCard(branch) {
     const branchConfig = this._config[branch];
-    const canRemove =
-      branchConfig &&
-      BRANCHES.some((b) => b.key !== branch && this._config[b.key]);
+    return branchConfig?.type !== undefined;
+  }
+
+  _renderBranch(branchKey, label) {
+    const branchConfig = this._config[branchKey];
 
     return html`
-      <div class="editor-root">
-        <div class="tabs">
-          ${BRANCHES.map(
-            (b) => html`
-              <button
-                type="button"
-                class="tab ${b.key === branch ? "active" : ""}"
-                @click=${() => this._selectBranch(b.key)}
-              >
-                ${b.label}
-              </button>
-            `
-          )}
+      <section class="branch">
+        <div class="branch-header-row">
+          <h3 class="branch-header">${label}</h3>
+          ${this._hasBranchCard(branchKey)
+            ? html`
+                <button
+                  type="button"
+                  class="link"
+                  @click=${() => this._replaceBranch(branchKey)}
+                >
+                  Change card type
+                </button>
+              `
+            : nothing}
         </div>
 
-        <p class="yaml-hint">
-          Configure one branch at a time below. For the full
-          <code>custom:is-app-card</code> YAML (both branches), use this
-          dialog's top-level <strong>Show code editor</strong>.
-        </p>
-
-        ${branchConfig
+        ${this._hasBranchCard(branchKey)
           ? keyed(
-              branch,
+              `${branchKey}-${branchConfig.type}`,
               html`
-                <p class="branch-header">${this._branchHeader(branch)}</p>
                 <hui-card-element-editor
                   .hass=${this.hass}
                   .lovelace=${this.lovelace}
                   .value=${branchConfig}
-                  @config-changed=${this._branchChanged}
+                  @config-changed=${(ev) => this._branchChanged(branchKey, ev)}
                 ></hui-card-element-editor>
-                ${canRemove
-                  ? html`
-                      <button
-                        type="button"
-                        class="link"
-                        @click=${this._removeBranch}
-                      >
-                        Remove this branch
-                      </button>
-                    `
-                  : ""}
               `
             )
           : html`
-              <p class="branch-header">${this._branchHeader(branch)}</p>
-              <p class="hint">No card configured for this branch.</p>
-              <button type="button" @click=${this._addBranch}>Add card</button>
+              <hui-card-picker
+                .hass=${this.hass}
+                .lovelace=${this.lovelace}
+                @config-changed=${(ev) => this._cardPicked(branchKey, ev)}
+              ></hui-card-picker>
             `}
+      </section>
+    `;
+  }
+
+  render() {
+    return html`
+      <div class="editor-root">
+        <p class="yaml-hint">
+          Choose a card type for each branch below. For the full
+          <code>custom:is-app-card</code> YAML, use this dialog's top-level
+          <strong>Show code editor</strong>.
+        </p>
+
+        ${BRANCHES.map((b) => this._renderBranch(b.key, b.label))}
       </div>
     `;
   }
@@ -186,48 +167,49 @@ class IsAppCardEditor extends LitElement {
       .editor-root {
         display: block;
       }
-      .tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 8px;
-      }
-      .tab {
-        flex: 1;
-        padding: 8px;
-        cursor: pointer;
-        border: 1px solid var(--divider-color);
-        background: var(--card-background-color);
-        color: var(--primary-text-color);
-        border-radius: 4px;
-      }
-      .tab.active {
-        border-color: var(--primary-color);
-        font-weight: bold;
-      }
       .yaml-hint {
         color: var(--secondary-text-color);
         font-size: 0.9em;
-        margin: 0 0 12px;
+        margin: 0 0 16px;
         line-height: 1.4;
+      }
+      .branch {
+        border: 1px solid var(--divider-color);
+        border-radius: var(--ha-border-radius-sm, 4px);
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+      .branch:last-child {
+        margin-bottom: 0;
+      }
+      .branch-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
       }
       .branch-header {
         font-weight: bold;
-        margin: 0 0 12px;
+        margin: 0;
         color: var(--primary-text-color);
-      }
-      .hint {
-        color: var(--secondary-text-color);
+        font-size: 1em;
       }
       .link {
-        margin-top: 8px;
         background: none;
         border: none;
         color: var(--primary-color);
         cursor: pointer;
         padding: 0;
+        font-size: 0.9em;
+        white-space: nowrap;
       }
       button.link:hover {
         text-decoration: underline;
+      }
+      hui-card-picker {
+        display: block;
+        min-height: 200px;
       }
     `;
   }
