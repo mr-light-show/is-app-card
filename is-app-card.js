@@ -3,7 +3,7 @@ import { keyed } from "https://unpkg.com/lit@3.3.3/directives/keyed.js?module";
 
 const CARD_TAG = "is-app-card";
 const CARD_TYPE = `custom:${CARD_TAG}`;
-const CARD_VERSION = "1.0.6";
+const CARD_VERSION = "1.0.7";
 
 const BRANCHES = [
   { key: "app_card", label: "Companion app", panel: "app_card" },
@@ -328,6 +328,8 @@ class IsAppCard extends HTMLElement {
     }
 
     this._config = config;
+    this._activeBranchKey = undefined;
+    this._activeBranchConfig = undefined;
     this._loadHelpers().then(() => this._renderActiveBranch());
   }
 
@@ -384,14 +386,37 @@ class IsAppCard extends HTMLElement {
     if (!this._config || !this._helpers) return;
 
     const branchConfig = this._pickBranchConfig();
+    const branchKey = this._isApp ? "app_card" : "nonapp_card";
+
+    if (
+      this._child &&
+      this._activeBranchKey === branchKey &&
+      this._activeBranchConfig === branchConfig
+    ) {
+      if (this._hass) {
+        this._child.hass = this._hass;
+      }
+      return;
+    }
+
     this.replaceChildren();
 
     if (!branchConfig) {
       this._child = null;
+      this._activeBranchKey = branchKey;
+      this._activeBranchConfig = branchConfig;
       return;
     }
 
     const child = await this._helpers.createCardElement(branchConfig);
+
+    if (
+      this._pickBranchConfig() !== branchConfig ||
+      (this._isApp ? "app_card" : "nonapp_card") !== branchKey
+    ) {
+      return;
+    }
+
     if (this._hass) {
       child.hass = this._hass;
     }
@@ -400,10 +425,20 @@ class IsAppCard extends HTMLElement {
     }
 
     this._child = child;
+    this._activeBranchKey = branchKey;
+    this._activeBranchConfig = branchConfig;
     child.style.height = "100%";
     this.appendChild(child);
-    this.dispatchEvent(
-      new CustomEvent("ll-rebuild", { bubbles: true, composed: true })
+    this._notifyGridUpdated();
+  }
+
+  _notifyGridUpdated() {
+    const huiCard = this.closest("hui-card");
+    if (!huiCard) {
+      return;
+    }
+    huiCard.dispatchEvent(
+      new CustomEvent("card-updated", { bubbles: true, composed: true })
     );
   }
 }
