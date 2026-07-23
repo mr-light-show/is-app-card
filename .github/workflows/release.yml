@@ -3,19 +3,19 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
-  contents: write
+  contents: write  # Required to create releases and upload assets
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ensure dist bundle exists
-        run: test -f dist/is-app-card.js
+      - name: Sync dist bundle
+        run: ./scripts/sync-dist.sh
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           files: dist/is-app-card.js
